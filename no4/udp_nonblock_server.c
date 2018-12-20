@@ -1,0 +1,103 @@
+/*20153292 JeongHyeonjin*/
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <errno.h>
+#include <string.h>
+#include <netdb.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/file.h>
+#include <signal.h>
+
+#define MAXBUFSIZE 255
+#define SERV_PORT 5000
+#define SLEEP_TIME 5
+
+void UseIdleIime();
+void SocketHandler(int signalType);
+
+int sock;
+
+int main(int argc,char *argv[]){
+	struct sockaddr_in serv_addr;
+	unsigned short serv_port=SERV_PORT;
+	struct sigaction handler;
+
+	if((sock=socket(AF_INET, SOCK_DGRAM,IPPROTO_UDP))<0){
+		perror("socket() failed");
+		exit(1);
+	}
+
+	memset(&serv_addr,0,sizeof(serv_addr));
+	serv_addr.sin_family=AF_INET;
+	serv_addr.sin_addr.s_addr=htonl(INADDR_ANY);
+	serv_addr.sin_port=htons(serv_port);
+
+	if(bind(sock, (struct sockaddr *)&serv_addr, sizeof(struct sockaddr))==-1){
+		perror("bind");
+		exit(1);
+	}
+
+	handler.sa_handler=SocketHandler;
+	if(sigfillset(&handler.sa_mask)<0){
+		perror("sigfillset() failed");
+		exit(1);
+	}
+
+	handler.sa_flags=0;
+
+	if(sigaction(SIGIO, &handler, 0)<0){
+		perror("sigaction() failed for SIGIO");
+		exit(1);
+	}
+
+	if(fcntl(sock,F_SETOWN,getpid())<0){
+		perror("Unable to set process owner to us");
+		exit(1);
+	}
+
+	if(fcntl(sock, F_SETFL,O_NONBLOCK|FASYNC)<0){
+		perror("Unable to put clienor(Un into nonbl)Uning/asyncmode");
+		exit(1);
+	}
+
+	for(;;)
+		UseIdleTime();
+}
+
+void UseIdleTime(){
+	printf("SIGIO related events are not required");
+	printf("Can handle non-socket related work");
+	sleep(SLEEP_TIME);
+}
+
+void SocketHandler(int signalType){
+	struct sockaddr_in clnt_addr;
+	unsigned int clntLen;
+	int recvMsgSize;
+	char buf[MAXBUFSIZE];
+
+	do{
+		clntLen=sizeof(clnt_addr);
+
+		if((recvMsgSize=recvfrom(sock,buf,MAXBUFSIZE,0,(struct sockaddr *) &clnt_addr,&clntLen))<0){
+			if(errno!=EWOULDBLOCK){
+				perror("recvfrom() failed");
+				exit(1);
+			}
+		}
+		else{
+			printf("Handling client %s\n",inet_ntoa(clnt_addr.sin_addr));
+
+			if(sendto(sock,buf,recvMsgSize,0,(struct sockaddr *)&clnt_addr, sizeof(clnt_addr))!=recvMsgSize){
+				perror("sendto() failed");
+				exit(1);
+			}
+		}
+	}while(recvMsgSize>=0);
+}
